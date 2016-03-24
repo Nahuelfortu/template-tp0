@@ -47,7 +47,7 @@ public class RegExGenerator {
         return Stream.of(notEmptyApply(astr, str -> str.substring(0, str.length() - 1)));
     }
 
-    private Function<String, Stream<String>> all(Function<String, Stream<String>>... fns) {
+    private Function<String, Stream<String>> seq(Function<String, Stream<String>>... fns) {
         return str -> Stream.of(fns).flatMap(f -> f.apply(str));
     }
 
@@ -57,50 +57,50 @@ public class RegExGenerator {
                 .mapToObj(i -> Character.valueOf((char) i))
                 .iterator();
 
-        // for each char do the matching operations
         Stream<String> result = Stream.of("");
         while (iterator.hasNext()) {
-            char chr = iterator.next();
-            switch (chr) {
-                case '.':
-                    result = result.flatMap(this::appendRandom);
-                    break;
-                case '+':
-                    result = result.flatMap(this::repeatLast);
-                    break;
-                case '?':
-                    result = result.flatMap(all(this::removeLast, this::identity));
-                    break;
-                case '*':
-                    result = result.flatMap(all(this::removeLast, this::identity, this::repeatLast));
-                    break;
-                case '[':
-                    result = result.flatMap(this.appendAlternatives(this.readAlternation(iterator)));
-                    break;
-                case '\\':
-                    if (!iterator.hasNext()) {
-                        break;
-                    }
-                    chr = iterator.next();
-                    result = result.map(this.appendChar(chr));
-                    break;
-                default:
-                    result = result.map(this.appendChar(chr));
-            }
+            Function<String, Stream<String>> nextOp
+                    = generateNext(iterator, result);
+            result = result.flatMap(nextOp);
         }
+
         return result.limit(numberOfResults).collect(Collectors.toList());
     }
 
-    private Function<String, String> appendChar(char chr) {
-        return str -> str + chr;
+    private Function<String, Stream<String>> generateNext(Iterator<Character> iterator, Stream<String> result) {
+        char chr = iterator.next();
+        switch (chr) {
+            case '.':
+                return this::appendRandom;
+            case '+':
+                return this::repeatLast;
+            case '?':
+                return seq(this::removeLast, this::identity);
+            case '*':
+                return seq(this::removeLast, this::identity, this::repeatLast);
+            case '[':
+                return this.appendAlternatives(this.readAlternation(iterator));
+            case '\\':
+                if (!iterator.hasNext()) {
+                    return this::identity;
+                }
+                chr = iterator.next();
+                return this.appendChar(chr);
+            default:
+                return this.appendChar(chr);
+        }
     }
 
-    private Function<String, Stream<? extends String>> appendAlternatives(List<Character> alternatives) {
+    private Function<String, Stream<String>> appendChar(char chr) {
+        return str -> Stream.of(str + chr);
+    }
+
+    private Function<String, Stream<String>> appendAlternatives(List<Character> alternatives) {
         return str -> alternatives.stream().map(chr -> str + chr);
     }
 
     /*
-     * Read all char til a closing bracket,
+     * Read seq char til a closing bracket,
      * returns the characters collected.
      */
     private List<Character> readAlternation(Iterator<Character> iterator) {
